@@ -72,8 +72,8 @@ ANY /* (Authorization: Bearer JWT)  -> API Gateway -> Lambda Authorizer (allow/d
 Não há um documento OpenAPI gerado para o próprio gateway — ele apenas adiciona `POST /auth`
 e encaminha todo o resto para o backend. Use a collection da plataforma no repositório principal:
 
-- **Bruno / Postman:** [`workbench-monolith` → `bruno/workbench-api`](https://github.com/REPLACE_GITHUB_ORG/workbench-monolith/tree/develop/bruno/workbench-api)
-  - [`01 - Auth / 03 - Login via CPF (Serverless)`](https://github.com/REPLACE_GITHUB_ORG/workbench-monolith/tree/develop/bruno/workbench-api/01%20-%20Auth) → `POST {{gatewayUrl}}/auth`
+- **Bruno / Postman:** [`workbench-monolith` → `bruno/workbench-api`](https://github.com/TechChalleng-FIAP-SOAT/workbench-monolith/tree/develop/bruno/workbench-api)
+  - [`01 - Auth / 03 - Login via CPF (Serverless)`](https://github.com/TechChalleng-FIAP-SOAT/workbench-monolith/tree/develop/bruno/workbench-api/01%20-%20Auth) → `POST {{gatewayUrl}}/auth`
   - `02 - Clients / 07 - My Orders`, `09/10 - Decide Order` → rotas protegidas via `{{gatewayUrl}}`
 - **Swagger UI (backend):** `https://<backend>/swagger-ui/index.html`
 
