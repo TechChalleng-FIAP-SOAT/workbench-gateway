@@ -72,14 +72,12 @@ resource "aws_lambda_permission" "apigw_invoke_issuer" {
 }
 
 # =============================================================================
-# Public route: POST /auth/login -> backend app (staff login, no authorization)
+# Public route: POST /auth/login -> staff issuer Lambda (email/senha, no auth)
 # =============================================================================
-# Staff authenticate tokenless (email/senha), so this route must bypass the JWT
-# authorizer just like POST /auth does. Being a specific resource, it takes
-# precedence over the greedy ANY /{proxy+}. It proxies straight to the backend
-# (HTTP_PROXY), which mints the staff JWT. Once staff hold a token, every other
-# route reaches the backend through /{proxy+} (the authorizer accepts any token
-# signed with the shared JWT_SECRET; the backend enforces roles).
+# Login de staff é tokenless (email/senha), então esta rota contorna o JWT
+# authorizer, como POST /auth. Por ser um resource específico, tem precedência
+# sobre o ANY /{proxy+}. Integra direto com a Lambda de login de staff (AWS_PROXY),
+# que valida as credenciais no Customer Service e emite o JWT com as roles.
 
 resource "aws_api_gateway_resource" "auth_login" {
   rest_api_id = aws_api_gateway_rest_api.os_management.id
@@ -99,8 +97,16 @@ resource "aws_api_gateway_integration" "auth_login_post" {
   resource_id             = aws_api_gateway_resource.auth_login.id
   http_method             = aws_api_gateway_method.auth_login_post.http_method
   integration_http_method = "POST"
-  type                    = "HTTP_PROXY"
-  uri                     = "${trimsuffix(var.origin_url, "/")}/auth/login"
+  type                    = "AWS_PROXY"
+  uri                     = local.staff_issuer_invoke_arn
+}
+
+resource "aws_lambda_permission" "apigw_invoke_staff_issuer" {
+  statement_id  = "AllowAPIGatewayInvokeStaffIssuer"
+  action        = "lambda:InvokeFunction"
+  function_name = local.staff_issuer_function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_api_gateway_rest_api.os_management.execution_arn}/*/POST/auth/login"
 }
 
 # =============================================================================

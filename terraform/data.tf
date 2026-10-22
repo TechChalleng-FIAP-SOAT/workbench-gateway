@@ -10,8 +10,10 @@ data "terraform_remote_state" "lambda" {
 }
 
 locals {
-  issuer_invoke_arn        = data.terraform_remote_state.lambda.outputs.issuer_invoke_arn
-  issuer_function_name     = data.terraform_remote_state.lambda.outputs.issuer_function_name
-  authorizer_invoke_arn    = data.terraform_remote_state.lambda.outputs.authorizer_invoke_arn
-  authorizer_function_name = data.terraform_remote_state.lambda.outputs.authorizer_function_name
+  issuer_invoke_arn          = data.terraform_remote_state.lambda.outputs.issuer_invoke_arn
+  issuer_function_name       = data.terraform_remote_state.lambda.outputs.issuer_function_name
+  staff_issuer_invoke_arn    = data.terraform_remote_state.lambda.outputs.staff_issuer_invoke_arn
+  staff_issuer_function_name = data.terraform_remote_state.lambda.outputs.staff_issuer_function_name
+  authorizer_invoke_arn      = data.terraform_remote_state.lambda.outputs.authorizer_invoke_arn
+  authorizer_function_name   = data.terraform_remote_state.lambda.outputs.authorizer_function_name
 }

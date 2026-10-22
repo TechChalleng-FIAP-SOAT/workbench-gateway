@@ -10,9 +10,9 @@ API Gateway da plataforma **Workbench** (FIAP SOAT — Tech Challenge Fase 4).
 
 Provisiona um **AWS API Gateway (REST)** que é o ponto de entrada público da plataforma:
 
-- **`POST /auth`** → encaminhado para a **Lambda issuer** (público; emite um JWT a partir do CPF).
-- **`POST /auth/login`** → encaminhado para os **microsserviços** (público; login de staff por e-mail/senha,
-  sem passar pelo authorizer, igual ao `/auth`).
+- **`POST /auth`** → encaminhado para a **Lambda issuer (cliente)** (público; emite um JWT a partir do CPF).
+- **`POST /auth/login`** → encaminhado para a **Lambda de staff** (`StaffAuthHandler`, público;
+  login de staff por e-mail/senha, sem passar pelo authorizer, igual ao `/auth`).
 - **`ANY /{proxy+}`** → protegido por um **JWT TOKEN authorizer** (a Lambda authorizer) e então
   encaminhado (proxy HTTP) para os **microsserviços** no Kubernetes.
 
@@ -51,13 +51,10 @@ flowchart LR
     proxy_route --- stage
 ```
 
-POST /auth {cpf}                    -> API Gateway -> Issuer Lambda -> JWT (cliente)
-POST /auth/login {email,senha}      -> API Gateway -> microsserviços -> JWT (staff)
-ANY /* (Authorization: Bearer JWT)  -> API Gateway -> Authorizer Lambda (allow/deny)
-                                                   -> microsserviços (Kubernetes) if allowed
 ```
-POST /auth {cpf}                    -> API Gateway -> Lambda Issuer -> JWT
-ANY /* (Authorization: Bearer JWT)  -> API Gateway -> Lambda Authorizer (allow/deny)
+POST /auth {cpf}                    -> API Gateway -> Issuer Lambda (cliente) -> JWT
+POST /auth/login {email,senha}      -> API Gateway -> Staff Issuer Lambda     -> JWT (staff)
+ANY /* (Authorization: Bearer JWT)  -> API Gateway -> Authorizer Lambda (allow/deny)
                                                    -> microsserviços (Kubernetes) se permitido
 ```
 
@@ -69,12 +66,15 @@ ANY /* (Authorization: Bearer JWT)  -> API Gateway -> Lambda Authorizer (allow/d
 
 ## Referência da API (Swagger / Postman)
 
-Não há um documento OpenAPI gerado para o próprio gateway — ele apenas adiciona `POST /auth`
-e encaminha todo o resto para o backend. Use a collection da plataforma no repositório principal:
+Não há um documento OpenAPI gerado para o próprio gateway — ele apenas expõe as rotas
+de autenticação e encaminha todo o resto para os microsserviços. Use a collection da
+plataforma:
 
-- **Bruno / Postman:** [`workbench-monolith` → `bruno/workbench-api`](https://github.com/TechChalleng-FIAP-SOAT/workbench-monolith/tree/develop/bruno/workbench-api)
-  - [`01 - Auth / 03 - Login via CPF (Serverless)`](https://github.com/TechChalleng-FIAP-SOAT/workbench-monolith/tree/develop/bruno/workbench-api/01%20-%20Auth) → `POST {{gatewayUrl}}/auth`
-  - `02 - Clients / 07 - My Orders`, `09/10 - Decide Order` → rotas protegidas via `{{gatewayUrl}}`
+- **Postman:** [`workbench-technical-documentation/postman`](https://github.com/TechChalleng-FIAP-SOAT/workbench-technical-documentation/tree/main/postman)
+  (collection unificada + fluxo Saga E2E).
+  - `POST {{gatewayUrl}}/auth` → login de cliente (CPF, via Lambda issuer)
+  - `POST {{gatewayUrl}}/auth/login` → login de staff (e-mail/senha, via Lambda de staff)
+  - demais rotas (`/order`, `/api/clients`, …) → protegidas via `{{gatewayUrl}}` (Bearer JWT)
 - **Swagger UI (backend):** `https://<backend>/swagger-ui/index.html`
 
 Aponte `gatewayUrl` para o output `auth_endpoint` (removendo o `/auth` final para obter a base).
