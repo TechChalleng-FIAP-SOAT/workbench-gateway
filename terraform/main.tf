@@ -28,6 +28,17 @@ provider "aws" {
   }
 }
 
+# =============================================================================
+# VPC Links: o gateway alcança os NLBs internos dos serviços sem expô-los na internet
+# =============================================================================
+# Um VPC Link de REST API aponta para um único NLB, então há um por serviço.
+
+resource "aws_api_gateway_vpc_link" "service" {
+  for_each    = local.k8s_services
+  name        = "${var.api_name}-${var.environment}-${each.key}"
+  target_arns = [data.aws_lb.service[each.key].arn]
+}
+
 resource "aws_api_gateway_rest_api" "os_management" {
   name        = var.api_name
   description = "Public entry point for the OS Management platform (auth + protected proxy)."
@@ -159,7 +170,9 @@ resource "aws_api_gateway_integration" "proxy" {
   http_method             = aws_api_gateway_method.proxy.http_method
   integration_http_method = "ANY"
   type                    = "HTTP_PROXY"
-  uri                     = "${trimsuffix(var.origin_url, "/")}/{proxy}"
+  connection_type         = "VPC_LINK"
+  connection_id           = aws_api_gateway_vpc_link.service["os"].id
+  uri                     = "${local.service_origins["os"]}/{proxy}"
 
   request_parameters = {
     "integration.request.path.proxy" = "method.request.path.proxy"
@@ -173,10 +186,10 @@ resource "aws_api_gateway_integration" "proxy" {
 # ANY /{proxy+} da raiz (que continua indo para o OS Service). Mesmo authorizer JWT.
 
 locals {
+  # http://<DNS do NLB interno>:<porta do Service>. Com VPC Link o host da URI só define o
+  # cabeçalho Host; o tráfego vai pelo link, dentro da VPC.
   service_origins = {
-    customer  = coalesce(var.customer_origin_url, var.origin_url)
-    billing   = coalesce(var.billing_origin_url, var.origin_url)
-    execution = coalesce(var.execution_origin_url, var.origin_url)
+    for key, lb in data.aws_lb.service : key => "http://${lb.dns_name}:${var.service_port}"
   }
 
   # prefixo (/api/<chave>) -> serviço dono
@@ -220,7 +233,9 @@ resource "aws_api_gateway_integration" "api_route" {
   http_method             = aws_api_gateway_method.api_route[each.key].http_method
   integration_http_method = "ANY"
   type                    = "HTTP_PROXY"
-  uri                     = "${trimsuffix(local.service_origins[each.value], "/")}/api/${each.key}"
+  connection_type         = "VPC_LINK"
+  connection_id           = aws_api_gateway_vpc_link.service[each.value].id
+  uri                     = "${local.service_origins[each.value]}/api/${each.key}"
 }
 
 resource "aws_api_gateway_resource" "api_route_proxy" {
@@ -250,7 +265,9 @@ resource "aws_api_gateway_integration" "api_route_proxy" {
   http_method             = aws_api_gateway_method.api_route_proxy[each.key].http_method
   integration_http_method = "ANY"
   type                    = "HTTP_PROXY"
-  uri                     = "${trimsuffix(local.service_origins[each.value], "/")}/api/${each.key}/{proxy}"
+  connection_type         = "VPC_LINK"
+  connection_id           = aws_api_gateway_vpc_link.service[each.value].id
+  uri                     = "${local.service_origins[each.value]}/api/${each.key}/{proxy}"
 
   request_parameters = {
     "integration.request.path.proxy" = "method.request.path.proxy"
@@ -317,11 +334,13 @@ resource "aws_api_gateway_deployment" "os_management" {
       aws_api_gateway_method.proxy.id,
       aws_api_gateway_integration.proxy.id,
       aws_api_gateway_integration.proxy.uri,
+      aws_api_gateway_integration.proxy.connection_id,
       [for k in keys(local.api_routes) : [
         aws_api_gateway_method.api_route[k].id,
         aws_api_gateway_integration.api_route[k].uri,
         aws_api_gateway_method.api_route_proxy[k].id,
         aws_api_gateway_integration.api_route_proxy[k].uri,
+        aws_api_gateway_integration.api_route[k].connection_id,
       ]],
     ]))
   }

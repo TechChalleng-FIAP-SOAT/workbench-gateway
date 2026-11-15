@@ -14,18 +14,25 @@ Provisiona um **AWS API Gateway (REST)** que é o ponto de entrada público da p
 - **`POST /auth/login`** → encaminhado para a **Lambda de staff** (`StaffAuthHandler`, público;
   login de staff por e-mail/senha, sem passar pelo authorizer, igual ao `/auth`).
 - **`ANY /{proxy+}`** e **`ANY /api/<recurso>/{proxy+}`** → protegidos por um **JWT TOKEN
-  authorizer** (a Lambda authorizer) e então encaminhados (HTTP_PROXY) ao microsserviço dono:
+  authorizer** (a Lambda authorizer) e então encaminhados (HTTP_PROXY por **VPC Link**) ao
+  microsserviço dono:
 
-| Rota no gateway | Destino | Variável |
-|---|---|---|
-| `/api/clients/**`, `/api/vehicles/**`, `/api/users/**` | Customer Service | `customer_origin_url` |
-| `/api/budgets/**`, `/api/payments/**` | Billing Service | `billing_origin_url` |
-| `/api/products/**`, `/api/stocks/**` | Execution Service | `execution_origin_url` |
-| todo o resto (`/order/**`, `/service-types/**`, `/monitoring/**`) | OS Service | `origin_url` |
+| Rota no gateway | Destino (NLB interno, via VPC Link) |
+|---|---|
+| `/api/clients/**`, `/api/vehicles/**`, `/api/users/**` | Customer Service |
+| `/api/budgets/**`, `/api/payments/**` | Billing Service |
+| `/api/products/**`, `/api/stocks/**` | Execution Service |
+| todo o resto (`/order/**`, `/service-types/**`, `/monitoring/**`) | OS Service |
 
 O API Gateway escolhe sempre o recurso mais específico, então `/api/<recurso>` vence o
-`/{proxy+}` da raiz. Uma origem vazia cai no `origin_url` (útil se um único Ingress
-rotear tudo). O mesmo roteamento existe localmente em
+`/{proxy+}` da raiz.
+
+**Os serviços não ficam expostos na internet.** Cada um tem um **NLB interno** (Service
+`type: LoadBalancer` com `aws-load-balancer-internal` no `k8s/app.yaml`), alcançável só de
+dentro da VPC. O gateway chega até eles por um **VPC Link** por serviço e encontra cada NLB
+pela tag `kubernetes.io/service-name` (`terraform/data.tf`) — não há URL de origem para
+configurar. Por isso, **os 4 serviços precisam estar no ar antes deste apply**. O mesmo
+roteamento existe localmente em
 `workbench-messaging/local-gateway/nginx.conf` (`docker compose --profile app`).
 
 As funções Lambda em si vivem no repositório **`workbench-lambda`**; este repositório lê os
@@ -120,15 +127,9 @@ branch é o ambiente:
 | `AWS_ACCESS_KEY_ID_<ENV>`, `AWS_SECRET_ACCESS_KEY_<ENV>`, `AWS_ACCOUNT_ID_<ENV>` | credenciais e guarda de conta do deploy |
 | `AWS_REGION` | região (sem sufixo, compartilhada) |
 | `TF_STATE_BUCKET_<ENV>` | bucket do state do Terraform |
-| `ORIGIN_URL_MAIN` (main) / `ORIGIN_URL` (develop) | URL base do **OS Service** (LoadBalancer `os-service`) — destino de `/{proxy+}` |
-| `CUSTOMER_ORIGIN_URL_MAIN` / `CUSTOMER_ORIGIN_URL` | URL do Customer Service (`/api/clients`, `/api/vehicles`, `/api/users`) |
-| `BILLING_ORIGIN_URL_MAIN` / `BILLING_ORIGIN_URL` | URL do Billing Service (`/api/budgets`, `/api/payments`) |
-| `EXECUTION_ORIGIN_URL_MAIN` / `EXECUTION_ORIGIN_URL` | URL do Execution Service (`/api/products`, `/api/stocks`) |
 
-> Os três últimos são opcionais: sem eles, as rotas `/api/...` vão para o `ORIGIN_URL`
-> (e só funcionam se ele rotear por prefixo). Pegue cada URL com
-> `kubectl get svc <serviço> -n <serviço> -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'`
-> e use `http://<hostname>:8080`.
+> Os antigos `ORIGIN_URL*` e `*_ORIGIN_URL*` **não são mais usados**: as origens são os NLBs
+> internos, achados pela tag. Pode apagá-los da org.
 
 Chaves de state (mesmo bucket, chaves distintas): este repositório usa `gateway/<env>/terraform.tfstate`
 e lê `lambda/<env>/terraform.tfstate`.

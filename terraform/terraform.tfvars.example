@@ -7,13 +7,10 @@ environment = "develop"
 # Empty = no restriction (local validation). CI sets this from AWS_ACCOUNT_ID_<ENV>.
 # aws_account_id = "123456789012"
 
-# Backends on Kubernetes (LoadBalancer de cada serviço). origin_url = OS Service
-# (/order, /service-types, /monitoring); os demais recebem /api/<recurso>.
-# Vazios caem no origin_url (caso um único Ingress roteie tudo).
-origin_url           = "http://os-service-lb.example.com"
-customer_origin_url  = "http://customer-service-lb.example.com"
-billing_origin_url   = "http://billing-service-lb.example.com"
-execution_origin_url = "http://execution-service-lb.example.com"
+# Backends: os NLBs INTERNOS dos 4 serviços são encontrados pela tag
+# kubernetes.io/service-name (data "aws_lb" em data.tf) e alcançados por VPC Link.
+# Os serviços precisam estar no ar antes do apply. Porta dos Services:
+# service_port = 8080
 
 # S3 bucket holding the workbench-lambda state (to read the functions' invoke ARNs).
 # The key is derived automatically: lambda/<environment>/terraform.tfstate
