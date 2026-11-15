@@ -27,13 +27,33 @@ variable "api_name" {
 }
 
 variable "origin_url" {
-  description = "Base URL of the OS Management backend (the app on Kubernetes), e.g. https://app.example.com."
+  description = "Base URL of the OS Service (orchestrator) on Kubernetes, e.g. http://os-lb.example.com. Default target of ANY /{proxy+} (/order, /service-types, /monitoring)."
   type        = string
 
   validation {
     condition     = can(regex("^https?://[^/]+(:[0-9]+)?(/.*)?$", var.origin_url))
     error_message = "origin_url must be an absolute HTTP or HTTPS URL."
   }
+}
+
+# Microsserviços atrás do gateway. Cada prefixo /api/<recurso> é roteado para o
+# serviço dono; vazio = cai no origin_url (útil quando um único Ingress roteia tudo).
+variable "customer_origin_url" {
+  description = "Base URL of the Customer Service (/api/clients, /api/vehicles, /api/users). Empty = origin_url."
+  type        = string
+  default     = ""
+}
+
+variable "billing_origin_url" {
+  description = "Base URL of the Billing Service (/api/budgets, /api/payments). Empty = origin_url."
+  type        = string
+  default     = ""
+}
+
+variable "execution_origin_url" {
+  description = "Base URL of the Execution Service (/api/products, /api/stocks). Empty = origin_url."
+  type        = string
+  default     = ""
 }
 
 variable "lambda_state_bucket" {

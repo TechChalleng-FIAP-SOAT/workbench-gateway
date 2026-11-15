@@ -167,6 +167,97 @@ resource "aws_api_gateway_integration" "proxy" {
 }
 
 # =============================================================================
+# Roteamento por microsserviço: /api/<recurso> e /api/<recurso>/{proxy+}
+# =============================================================================
+# O API Gateway escolhe o recurso mais específico, então estes caminhos vencem o
+# ANY /{proxy+} da raiz (que continua indo para o OS Service). Mesmo authorizer JWT.
+
+locals {
+  service_origins = {
+    customer  = coalesce(var.customer_origin_url, var.origin_url)
+    billing   = coalesce(var.billing_origin_url, var.origin_url)
+    execution = coalesce(var.execution_origin_url, var.origin_url)
+  }
+
+  # prefixo (/api/<chave>) -> serviço dono
+  api_routes = {
+    clients  = "customer"
+    vehicles = "customer"
+    users    = "customer"
+    budgets  = "billing"
+    payments = "billing"
+    products = "execution"
+    stocks   = "execution"
+  }
+}
+
+resource "aws_api_gateway_resource" "api" {
+  rest_api_id = aws_api_gateway_rest_api.os_management.id
+  parent_id   = aws_api_gateway_rest_api.os_management.root_resource_id
+  path_part   = "api"
+}
+
+resource "aws_api_gateway_resource" "api_route" {
+  for_each    = local.api_routes
+  rest_api_id = aws_api_gateway_rest_api.os_management.id
+  parent_id   = aws_api_gateway_resource.api.id
+  path_part   = each.key
+}
+
+resource "aws_api_gateway_method" "api_route" {
+  for_each      = local.api_routes
+  rest_api_id   = aws_api_gateway_rest_api.os_management.id
+  resource_id   = aws_api_gateway_resource.api_route[each.key].id
+  http_method   = "ANY"
+  authorization = "CUSTOM"
+  authorizer_id = aws_api_gateway_authorizer.jwt.id
+}
+
+resource "aws_api_gateway_integration" "api_route" {
+  for_each                = local.api_routes
+  rest_api_id             = aws_api_gateway_rest_api.os_management.id
+  resource_id             = aws_api_gateway_resource.api_route[each.key].id
+  http_method             = aws_api_gateway_method.api_route[each.key].http_method
+  integration_http_method = "ANY"
+  type                    = "HTTP_PROXY"
+  uri                     = "${trimsuffix(local.service_origins[each.value], "/")}/api/${each.key}"
+}
+
+resource "aws_api_gateway_resource" "api_route_proxy" {
+  for_each    = local.api_routes
+  rest_api_id = aws_api_gateway_rest_api.os_management.id
+  parent_id   = aws_api_gateway_resource.api_route[each.key].id
+  path_part   = "{proxy+}"
+}
+
+resource "aws_api_gateway_method" "api_route_proxy" {
+  for_each      = local.api_routes
+  rest_api_id   = aws_api_gateway_rest_api.os_management.id
+  resource_id   = aws_api_gateway_resource.api_route_proxy[each.key].id
+  http_method   = "ANY"
+  authorization = "CUSTOM"
+  authorizer_id = aws_api_gateway_authorizer.jwt.id
+
+  request_parameters = {
+    "method.request.path.proxy" = true
+  }
+}
+
+resource "aws_api_gateway_integration" "api_route_proxy" {
+  for_each                = local.api_routes
+  rest_api_id             = aws_api_gateway_rest_api.os_management.id
+  resource_id             = aws_api_gateway_resource.api_route_proxy[each.key].id
+  http_method             = aws_api_gateway_method.api_route_proxy[each.key].http_method
+  integration_http_method = "ANY"
+  type                    = "HTTP_PROXY"
+  uri                     = "${trimsuffix(local.service_origins[each.value], "/")}/api/${each.key}/{proxy}"
+
+  request_parameters = {
+    "integration.request.path.proxy" = "method.request.path.proxy"
+  }
+}
+
+# =============================================================================
 # Observability — structured (JSON) access logs + X-Ray
 # =============================================================================
 # REST API access/execution logs require an account-level CloudWatch Logs role.
@@ -226,6 +317,12 @@ resource "aws_api_gateway_deployment" "os_management" {
       aws_api_gateway_method.proxy.id,
       aws_api_gateway_integration.proxy.id,
       aws_api_gateway_integration.proxy.uri,
+      [for k in keys(local.api_routes) : [
+        aws_api_gateway_method.api_route[k].id,
+        aws_api_gateway_integration.api_route[k].uri,
+        aws_api_gateway_method.api_route_proxy[k].id,
+        aws_api_gateway_integration.api_route_proxy[k].uri,
+      ]],
     ]))
   }
 

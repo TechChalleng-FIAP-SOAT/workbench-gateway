@@ -5,16 +5,28 @@ API Gateway da plataforma **Workbench** (FIAP SOAT — Tech Challenge Fase 4).
 > **Contexto (Fase 4):** na Fase 3 o gateway encaminhava para o **monólito**. Na
 > Fase 4 a aplicação é um conjunto de **microsserviços**; o gateway continua sendo o
 > ponto de entrada público (auth + proxy), mas o destino do proxy passou a ser a
-> **plataforma de microsserviços** no Kubernetes (via o Service de entrada / OS
-> Service), não um backend único.
+> **plataforma de microsserviços** no Kubernetes: cada prefixo de rota é encaminhado
+> ao serviço dono (tabela abaixo), não a um backend único.
 
 Provisiona um **AWS API Gateway (REST)** que é o ponto de entrada público da plataforma:
 
 - **`POST /auth`** → encaminhado para a **Lambda issuer (cliente)** (público; emite um JWT a partir do CPF).
 - **`POST /auth/login`** → encaminhado para a **Lambda de staff** (`StaffAuthHandler`, público;
   login de staff por e-mail/senha, sem passar pelo authorizer, igual ao `/auth`).
-- **`ANY /{proxy+}`** → protegido por um **JWT TOKEN authorizer** (a Lambda authorizer) e então
-  encaminhado (proxy HTTP) para os **microsserviços** no Kubernetes.
+- **`ANY /{proxy+}`** e **`ANY /api/<recurso>/{proxy+}`** → protegidos por um **JWT TOKEN
+  authorizer** (a Lambda authorizer) e então encaminhados (HTTP_PROXY) ao microsserviço dono:
+
+| Rota no gateway | Destino | Variável |
+|---|---|---|
+| `/api/clients/**`, `/api/vehicles/**`, `/api/users/**` | Customer Service | `customer_origin_url` |
+| `/api/budgets/**`, `/api/payments/**` | Billing Service | `billing_origin_url` |
+| `/api/products/**`, `/api/stocks/**` | Execution Service | `execution_origin_url` |
+| todo o resto (`/order/**`, `/service-types/**`, `/monitoring/**`) | OS Service | `origin_url` |
+
+O API Gateway escolhe sempre o recurso mais específico, então `/api/<recurso>` vence o
+`/{proxy+}` da raiz. Uma origem vazia cai no `origin_url` (útil se um único Ingress
+rotear tudo). O mesmo roteamento existe localmente em
+`workbench-messaging/local-gateway/nginx.conf` (`docker compose --profile app`).
 
 As funções Lambda em si vivem no repositório **`workbench-lambda`**; este repositório lê os
 ARNs de invocação delas via `terraform_remote_state` e monta o gateway em torno delas.
@@ -100,11 +112,23 @@ Outputs principais: `auth_endpoint`, `invoke_url`.
 
 ## Configuração do CI/CD
 
-**Variables** do repositório: `TF_STATE_BUCKET`, `AWS_REGION`.
-(`TF_STATE_BUCKET` também pode ser fornecida como secret do repositório.)
+Todos vêm de **secrets da organização**, com sufixo por branch (`_MAIN` / `_DEVELOP`) — a
+branch é o ambiente:
 
-**Secrets** do repositório: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `ORIGIN_URL`
-(URL base da aplicação backend em Kubernetes).
+| Secret | Uso |
+|---|---|
+| `AWS_ACCESS_KEY_ID_<ENV>`, `AWS_SECRET_ACCESS_KEY_<ENV>`, `AWS_ACCOUNT_ID_<ENV>` | credenciais e guarda de conta do deploy |
+| `AWS_REGION` | região (sem sufixo, compartilhada) |
+| `TF_STATE_BUCKET_<ENV>` | bucket do state do Terraform |
+| `ORIGIN_URL_MAIN` (main) / `ORIGIN_URL` (develop) | URL base do **OS Service** (LoadBalancer `os-service`) — destino de `/{proxy+}` |
+| `CUSTOMER_ORIGIN_URL_MAIN` / `CUSTOMER_ORIGIN_URL` | URL do Customer Service (`/api/clients`, `/api/vehicles`, `/api/users`) |
+| `BILLING_ORIGIN_URL_MAIN` / `BILLING_ORIGIN_URL` | URL do Billing Service (`/api/budgets`, `/api/payments`) |
+| `EXECUTION_ORIGIN_URL_MAIN` / `EXECUTION_ORIGIN_URL` | URL do Execution Service (`/api/products`, `/api/stocks`) |
+
+> Os três últimos são opcionais: sem eles, as rotas `/api/...` vão para o `ORIGIN_URL`
+> (e só funcionam se ele rotear por prefixo). Pegue cada URL com
+> `kubectl get svc <serviço> -n <serviço> -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'`
+> e use `http://<hostname>:8080`.
 
 Chaves de state (mesmo bucket, chaves distintas): este repositório usa `gateway/<env>/terraform.tfstate`
 e lê `lambda/<env>/terraform.tfstate`.
