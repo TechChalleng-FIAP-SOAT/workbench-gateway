@@ -146,13 +146,13 @@ k8s-terraform -> database -> workbench-lambda -> workbench-gateway -> app
 
 ## Notes
 - The `ANY /{proxy+}` route is guarded by the **JWT authorizer**, which accepts any token
-  signed with the shared `JWT_SECRET` (client or staff); the **backend** then enforces roles.
+  signed in RS256 by the auth Lambda (client or staff), checked with its public key; the **backend** then enforces roles.
   Staff log in via the public **`POST /auth/login`** on this gateway and call protected routes
   through `/{proxy+}` with their staff JWT. (The backend Swagger UI is still reached directly,
   as it is not exposed as a public gateway route.)
 - Protected calls only succeed if the **microsserviços** run the CPF-token filter (grants
   `ROLE_CLIENT`, resolves the client by document via Customer Service). All services share
-  the same `JWT_SECRET`, so a token is verifiable across the platform.
+  the same public key (`JWT_PUBLIC_KEY`), so a token is verifiable across the platform.
 - The authorizer keeps a 300s result cache; the authorizer Lambda returns a stage-wide Allow
   (`…/<stage>/*/*`) so caching does not break multi-route sessions.
 - Access logs are JSON in CloudWatch (`/aws/apigateway/<api>-<env>/access`) with `requestId`
