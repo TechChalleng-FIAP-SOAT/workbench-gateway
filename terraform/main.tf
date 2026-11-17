@@ -335,6 +335,16 @@ resource "aws_api_gateway_deployment" "os_management" {
       aws_api_gateway_integration.proxy.id,
       aws_api_gateway_integration.proxy.uri,
       aws_api_gateway_integration.proxy.connection_id,
+      # Documentação (Swagger): sem estes IDs/conteúdos o estágio não republica ao mudar a página ou um spec.
+      aws_api_gateway_resource.docs.id,
+      aws_api_gateway_method.docs_index.id,
+      aws_api_gateway_integration_response.docs_index.id,
+      sha1(local.docs_index_template),
+      [for k in sort(tolist(local.docs_specs)) : [
+        aws_api_gateway_method.docs_spec[k].id,
+        aws_api_gateway_integration_response.docs_spec[k].id,
+        sha1(local.docs_spec_templates[k]),
+      ]],
       [for k in keys(local.api_routes) : [
         aws_api_gateway_method.api_route[k].id,
         aws_api_gateway_integration.api_route[k].uri,

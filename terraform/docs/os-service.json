@@ -1,0 +1,1033 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Workbench os-service (AWS)",
+    "description": "Especificação gerada do os-service em execução na AWS (17/11/2026). Rotas protegidas por JWT: use Authorize.",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "/__STAGE__",
+      "description": "API Gateway (mesmo estágio desta página)"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Service Types",
+      "description": "Catálogo de tipos de serviço e preço de mão de obra"
+    },
+    {
+      "name": "Service Orders",
+      "description": "Gestao de Ordens de Servico"
+    },
+    {
+      "name": "Monitoring",
+      "description": "Tempo médio de execução dos serviços"
+    }
+  ],
+  "paths": {
+    "/service-types/{id}": {
+      "get": {
+        "tags": [
+          "Service Types"
+        ],
+        "summary": "Buscar tipo de serviço por ID",
+        "operationId": "findById",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceTypeResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Service Types"
+        ],
+        "summary": "Atualizar tipo de serviço",
+        "description": "Descrição e mão de obra; o nome não é alterável.",
+        "operationId": "update",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateServiceTypeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceTypeResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Service Types"
+        ],
+        "summary": "Remover tipo de serviço",
+        "description": "OS já abertas não são afetadas; novas OS deixam de aceitar o tipo.",
+        "operationId": "delete",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/service-types/{id}/labor-cost": {
+      "put": {
+        "tags": [
+          "Service Types"
+        ],
+        "summary": "Atualizar custo de mão de obra de um tipo de serviço",
+        "operationId": "updateLaborCost",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateLaborCostRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceTypeResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/service-types": {
+      "get": {
+        "tags": [
+          "Service Types"
+        ],
+        "summary": "Listar tipos de serviço (com custo de MO)",
+        "operationId": "findAll",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ServiceTypeResponse"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Service Types"
+        ],
+        "summary": "Criar tipo de serviço",
+        "description": "O nome é normalizado (maiúsculas, espaços → _) e único.",
+        "operationId": "create",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateServiceTypeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceTypeResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/order": {
+      "get": {
+        "tags": [
+          "Service Orders"
+        ],
+        "summary": "Listar OS ativas",
+        "description": "Retorna OS ativas (exclui FINALIZADA/ENTREGUE), ordenadas por prioridade de status e data de criacao.",
+        "operationId": "listOrders",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ServiceOrderResponse"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Service Orders"
+        ],
+        "summary": "Criar ordem de servico",
+        "description": "Cria uma nova OS associando cliente (CPF/CNPJ), veiculo (placa) e tipos de servico.",
+        "operationId": "createOrder",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateOrderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceOrderResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/order/{id}/payment-retry": {
+      "post": {
+        "tags": [
+          "Service Orders"
+        ],
+        "summary": "Gerar nova cobrança após pagamento recusado",
+        "description": "Quando o pagamento da OS foi recusado/cancelado, gera um novo link de pagamento (enviado por e-mail). Cliente só pode pedir para a própria OS.",
+        "operationId": "retryPayment",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/order/{id}/diagnosis": {
+      "post": {
+        "tags": [
+          "Service Orders"
+        ],
+        "summary": "Registrar diagnostico da OS",
+        "description": "Informa as pecas a reservar e a mao de obra por servico. Transita a OS para EM_DIAGNOSTICO e inicia a Saga (reserva de estoque).",
+        "operationId": "diagnose",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DiagnoseOrderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceOrderResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/order/{id}/decision": {
+      "post": {
+        "tags": [
+          "Service Orders"
+        ],
+        "summary": "Decidir orcamento (aprovar/recusar)",
+        "description": "Decisao do cliente sobre o orcamento. APPROVED confirma a reserva (baixa de estoque) e a OS vai para APROVADO; REJECTED libera a reserva e a OS vai para RECUSADA.",
+        "operationId": "decide",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DecideOrderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/monitoring/by-id": {
+      "post": {
+        "tags": [
+          "Monitoring"
+        ],
+        "summary": "Tempo de execução de um serviço específico",
+        "operationId": "getAverageExecutionTimeById",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AverageTimeByIdRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceAverageTime"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/monitoring/all": {
+      "post": {
+        "tags": [
+          "Monitoring"
+        ],
+        "summary": "Tempo médio de execução por tipo de serviço",
+        "operationId": "getAverageExecutionTime",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AverageTimeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ServiceAverageTime"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/order/{id}": {
+      "patch": {
+        "tags": [
+          "Service Orders"
+        ],
+        "summary": "Atualizar status da OS",
+        "description": "Atualiza o status da OS. Valida transicoes permitidas. Retorna 204 No Content.",
+        "operationId": "updateOrder",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateOrderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/order/{id}/services/{serviceId}/status": {
+      "patch": {
+        "tags": [
+          "Service Orders"
+        ],
+        "summary": "Avançar a execução de um serviço da OS",
+        "description": "TO_DO → DOING → DONE, com a OS em EM_EXECUCAO. Ao concluir o último serviço, a OS vai automaticamente para FINALIZADA. Os instantes alimentam o relatório de tempo médio (/monitoring).",
+        "operationId": "updateServiceStatus",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "serviceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateServiceStatusRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderServiceResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/order/{id}/services": {
+      "get": {
+        "tags": [
+          "Service Orders"
+        ],
+        "summary": "Listar serviços da OS",
+        "description": "Status de execução (TO_DO/DOING/DONE) e histórico de cada serviço.",
+        "operationId": "listServices",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/OrderServiceResponse"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/order/{id}/saga": {
+      "get": {
+        "tags": [
+          "Service Orders"
+        ],
+        "summary": "Estado da Saga da OS",
+        "description": "Passo atual, passos concluídos e o motivo quando falhou (ex.: estoque insuficiente). Com a Saga em FALHOU, um novo POST /diagnosis a recomeça.",
+        "operationId": "findSaga",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderSagaResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/order/id/{id}": {
+      "get": {
+        "tags": [
+          "Service Orders"
+        ],
+        "summary": "Buscar OS por ID",
+        "description": "Retorna uma OS pelo seu UUID.",
+        "operationId": "findOrderById",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceOrderResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/order/document/{cpfCnpj}": {
+      "get": {
+        "tags": [
+          "Service Orders"
+        ],
+        "summary": "Buscar OS por documento",
+        "description": "Retorna todas as OS vinculadas a um cliente pelo CPF ou CNPJ (historico completo). Cliente so consulta o proprio documento.",
+        "operationId": "findByDocument",
+        "parameters": [
+          {
+            "name": "cpfCnpj",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ServiceOrderResponse"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "UpdateServiceTypeRequest": {
+        "type": "object",
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "laborCost": {
+            "type": "number"
+          },
+          "laborHours": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "laborCost"
+        ]
+      },
+      "ServiceTypeResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "laborCost": {
+            "type": "number"
+          },
+          "laborHours": {
+            "type": "number"
+          }
+        }
+      },
+      "UpdateLaborCostRequest": {
+        "type": "object",
+        "properties": {
+          "laborCost": {
+            "type": "number"
+          },
+          "laborHours": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "laborCost"
+        ]
+      },
+      "CreateServiceTypeRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": {
+            "type": "string"
+          },
+          "laborCost": {
+            "type": "number"
+          },
+          "laborHours": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "CreateOrderRequest": {
+        "type": "object",
+        "description": "Create Order request payload.",
+        "properties": {
+          "cpfCnpj": {
+            "type": "string",
+            "description": "Client CPF or CNPJ.",
+            "example": "52998224725"
+          },
+          "placaVeiculo": {
+            "type": "string",
+            "description": "Vehicle plate.",
+            "example": "ABC-1234"
+          },
+          "serviceTypes": {
+            "type": "array",
+            "description": "Service types registered in the system.",
+            "example": [
+              "TROCA_OLEO",
+              "ALINHAMENTO"
+            ],
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "ServiceOrderResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "serviceTypeName": {
+            "type": "string"
+          },
+          "serviceStatus": {
+            "type": "string"
+          },
+          "listService": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "cpfCnpj": {
+            "type": "string"
+          },
+          "placaVeiculo": {
+            "type": "string"
+          },
+          "rejectionReason": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "DiagnoseOrderRequest": {
+        "type": "object",
+        "properties": {
+          "parts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PartItem"
+            }
+          },
+          "services": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ServiceLaborItem"
+            }
+          }
+        }
+      },
+      "PartItem": {
+        "type": "object",
+        "properties": {
+          "productId": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "number"
+          }
+        }
+      },
+      "ServiceLaborItem": {
+        "type": "object",
+        "properties": {
+          "serviceType": {
+            "type": "string"
+          },
+          "laborCost": {
+            "type": "number"
+          },
+          "laborHours": {
+            "type": "number"
+          },
+          "useDefault": {
+            "type": "boolean"
+          }
+        }
+      },
+      "DecideOrderRequest": {
+        "type": "object",
+        "properties": {
+          "decision": {
+            "type": "string",
+            "enum": [
+              "APPROVED",
+              "REJECTED"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      },
+      "AverageTimeByIdRequest": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "timeUnit": {
+            "type": "string",
+            "enum": [
+              "SECONDS",
+              "MINUTES",
+              "HOURS"
+            ]
+          }
+        }
+      },
+      "ServiceAverageTime": {
+        "type": "object",
+        "properties": {
+          "serviceTypeName": {
+            "type": "string"
+          },
+          "averageTime": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      },
+      "AverageTimeRequest": {
+        "type": "object",
+        "properties": {
+          "timeUnit": {
+            "type": "string",
+            "enum": [
+              "SECONDS",
+              "MINUTES",
+              "HOURS"
+            ]
+          }
+        }
+      },
+      "UpdateOrderRequest": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "RECEBIDA",
+              "EM_DIAGNOSTICO",
+              "AGUARDANDO_APROVACAO",
+              "APROVADO",
+              "EM_EXECUCAO",
+              "FINALIZADA",
+              "PAGAMENTO_PENDENTE",
+              "PAGO",
+              "ENTREGUE",
+              "RECUSADA"
+            ]
+          }
+        }
+      },
+      "UpdateServiceStatusRequest": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "TO_DO",
+              "DOING",
+              "DONE"
+            ]
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "OrderServiceResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "serviceType": {
+            "type": "string"
+          },
+          "laborCost": {
+            "type": "number"
+          },
+          "laborHours": {
+            "type": "number"
+          },
+          "status": {
+            "type": "string"
+          },
+          "history": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StatusChange"
+            }
+          }
+        }
+      },
+      "StatusChange": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "changedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "OrderSagaResponse": {
+        "type": "object",
+        "properties": {
+          "step": {
+            "type": "string"
+          },
+          "completedSteps": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "failureReason": {
+            "type": "string"
+          },
+          "pendingCommand": {
+            "type": "string"
+          },
+          "retryCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "JWT RS256 emitido pelas Lambdas: POST /auth (cliente, CPF) ou POST /auth/login (equipe)."
+      }
+    }
+  },
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ]
+}

@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <title>Workbench | API (Swagger)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.35.0/swagger-ui.css">
+  <style>body { margin: 0; }</style>
+</head>
+<body>
+  <div id="swagger-ui"></div>
+  <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.35.0/swagger-ui-bundle.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.35.0/swagger-ui-standalone-preset.js"></script>
+  <script>
+    // Os specs ficam em /docs/<serviço>.json no mesmo API Gateway (caminho relativo: funciona em qualquer estágio).
+    // "Try it out" chama as rotas reais do próprio gateway: clique em Authorize e cole o JWT (sem o prefixo Bearer).
+    window.onload = function () {
+      window.ui = SwaggerUIBundle({
+        urls: [
+          { name: "os-service (OS, Saga, serviços, monitoramento)", url: "docs/os-service.json" },
+          { name: "customer-service (clientes, veículos, usuários)", url: "docs/customer-service.json" },
+          { name: "billing-service (orçamento e pagamento)", url: "docs/billing-service.json" },
+          { name: "execution-service (produtos e estoque)", url: "docs/execution-service.json" }
+        ],
+        "urls.primaryName": "os-service (OS, Saga, serviços, monitoramento)",
+        dom_id: "#swagger-ui",
+        deepLinking: true,
+        persistAuthorization: true,
+        presets: [SwaggerUIBundle.presets.apis, SwaggerUIStandalonePreset],
+        layout: "StandaloneLayout"
+      });
+    };
+  </script>
+</body>
+</html>
