@@ -28,6 +28,17 @@ provider "aws" {
   }
 }
 
+# =============================================================================
+# VPC Links: o gateway alcança os NLBs internos dos serviços sem expô-los na internet
+# =============================================================================
+# Um VPC Link de REST API aponta para um único NLB, então há um por serviço.
+
+resource "aws_api_gateway_vpc_link" "service" {
+  for_each    = local.k8s_services
+  name        = "${var.api_name}-${var.environment}-${each.key}"
+  target_arns = [data.aws_lb.service[each.key].arn]
+}
+
 resource "aws_api_gateway_rest_api" "os_management" {
   name        = var.api_name
   description = "Public entry point for the OS Management platform (auth + protected proxy)."
@@ -72,14 +83,12 @@ resource "aws_lambda_permission" "apigw_invoke_issuer" {
 }
 
 # =============================================================================
-# Public route: POST /auth/login -> backend app (staff login, no authorization)
+# Public route: POST /auth/login -> staff issuer Lambda (email/senha, no auth)
 # =============================================================================
-# Staff authenticate tokenless (email/senha), so this route must bypass the JWT
-# authorizer just like POST /auth does. Being a specific resource, it takes
-# precedence over the greedy ANY /{proxy+}. It proxies straight to the backend
-# (HTTP_PROXY), which mints the staff JWT. Once staff hold a token, every other
-# route reaches the backend through /{proxy+} (the authorizer accepts any token
-# signed with the shared JWT_SECRET; the backend enforces roles).
+# Login de staff é tokenless (email/senha), então esta rota contorna o JWT
+# authorizer, como POST /auth. Por ser um resource específico, tem precedência
+# sobre o ANY /{proxy+}. Integra direto com a Lambda de login de staff (AWS_PROXY),
+# que valida as credenciais no Customer Service e emite o JWT com as roles.
 
 resource "aws_api_gateway_resource" "auth_login" {
   rest_api_id = aws_api_gateway_rest_api.os_management.id
@@ -99,8 +108,16 @@ resource "aws_api_gateway_integration" "auth_login_post" {
   resource_id             = aws_api_gateway_resource.auth_login.id
   http_method             = aws_api_gateway_method.auth_login_post.http_method
   integration_http_method = "POST"
-  type                    = "HTTP_PROXY"
-  uri                     = "${trimsuffix(var.origin_url, "/")}/auth/login"
+  type                    = "AWS_PROXY"
+  uri                     = local.staff_issuer_invoke_arn
+}
+
+resource "aws_lambda_permission" "apigw_invoke_staff_issuer" {
+  statement_id  = "AllowAPIGatewayInvokeStaffIssuer"
+  action        = "lambda:InvokeFunction"
+  function_name = local.staff_issuer_function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_api_gateway_rest_api.os_management.execution_arn}/*/POST/auth/login"
 }
 
 # =============================================================================
@@ -153,7 +170,104 @@ resource "aws_api_gateway_integration" "proxy" {
   http_method             = aws_api_gateway_method.proxy.http_method
   integration_http_method = "ANY"
   type                    = "HTTP_PROXY"
-  uri                     = "${trimsuffix(var.origin_url, "/")}/{proxy}"
+  connection_type         = "VPC_LINK"
+  connection_id           = aws_api_gateway_vpc_link.service["os"].id
+  uri                     = "${local.service_origins["os"]}/{proxy}"
+
+  request_parameters = {
+    "integration.request.path.proxy" = "method.request.path.proxy"
+  }
+}
+
+# =============================================================================
+# Roteamento por microsserviço: /api/<recurso> e /api/<recurso>/{proxy+}
+# =============================================================================
+# O API Gateway escolhe o recurso mais específico, então estes caminhos vencem o
+# ANY /{proxy+} da raiz (que continua indo para o OS Service). Mesmo authorizer JWT.
+
+locals {
+  # http://<DNS do NLB interno>:<porta do Service>. Com VPC Link o host da URI só define o
+  # cabeçalho Host; o tráfego vai pelo link, dentro da VPC.
+  service_origins = {
+    for key, lb in data.aws_lb.service : key => "http://${lb.dns_name}:${var.service_port}"
+  }
+
+  # prefixo (/api/<chave>) -> serviço dono
+  api_routes = {
+    clients  = "customer"
+    vehicles = "customer"
+    users    = "customer"
+    budgets  = "billing"
+    payments = "billing"
+    products = "execution"
+    stocks   = "execution"
+  }
+}
+
+resource "aws_api_gateway_resource" "api" {
+  rest_api_id = aws_api_gateway_rest_api.os_management.id
+  parent_id   = aws_api_gateway_rest_api.os_management.root_resource_id
+  path_part   = "api"
+}
+
+resource "aws_api_gateway_resource" "api_route" {
+  for_each    = local.api_routes
+  rest_api_id = aws_api_gateway_rest_api.os_management.id
+  parent_id   = aws_api_gateway_resource.api.id
+  path_part   = each.key
+}
+
+resource "aws_api_gateway_method" "api_route" {
+  for_each      = local.api_routes
+  rest_api_id   = aws_api_gateway_rest_api.os_management.id
+  resource_id   = aws_api_gateway_resource.api_route[each.key].id
+  http_method   = "ANY"
+  authorization = "CUSTOM"
+  authorizer_id = aws_api_gateway_authorizer.jwt.id
+}
+
+resource "aws_api_gateway_integration" "api_route" {
+  for_each                = local.api_routes
+  rest_api_id             = aws_api_gateway_rest_api.os_management.id
+  resource_id             = aws_api_gateway_resource.api_route[each.key].id
+  http_method             = aws_api_gateway_method.api_route[each.key].http_method
+  integration_http_method = "ANY"
+  type                    = "HTTP_PROXY"
+  connection_type         = "VPC_LINK"
+  connection_id           = aws_api_gateway_vpc_link.service[each.value].id
+  uri                     = "${local.service_origins[each.value]}/api/${each.key}"
+}
+
+resource "aws_api_gateway_resource" "api_route_proxy" {
+  for_each    = local.api_routes
+  rest_api_id = aws_api_gateway_rest_api.os_management.id
+  parent_id   = aws_api_gateway_resource.api_route[each.key].id
+  path_part   = "{proxy+}"
+}
+
+resource "aws_api_gateway_method" "api_route_proxy" {
+  for_each      = local.api_routes
+  rest_api_id   = aws_api_gateway_rest_api.os_management.id
+  resource_id   = aws_api_gateway_resource.api_route_proxy[each.key].id
+  http_method   = "ANY"
+  authorization = "CUSTOM"
+  authorizer_id = aws_api_gateway_authorizer.jwt.id
+
+  request_parameters = {
+    "method.request.path.proxy" = true
+  }
+}
+
+resource "aws_api_gateway_integration" "api_route_proxy" {
+  for_each                = local.api_routes
+  rest_api_id             = aws_api_gateway_rest_api.os_management.id
+  resource_id             = aws_api_gateway_resource.api_route_proxy[each.key].id
+  http_method             = aws_api_gateway_method.api_route_proxy[each.key].http_method
+  integration_http_method = "ANY"
+  type                    = "HTTP_PROXY"
+  connection_type         = "VPC_LINK"
+  connection_id           = aws_api_gateway_vpc_link.service[each.value].id
+  uri                     = "${local.service_origins[each.value]}/api/${each.key}/{proxy}"
 
   request_parameters = {
     "integration.request.path.proxy" = "method.request.path.proxy"
@@ -220,6 +334,14 @@ resource "aws_api_gateway_deployment" "os_management" {
       aws_api_gateway_method.proxy.id,
       aws_api_gateway_integration.proxy.id,
       aws_api_gateway_integration.proxy.uri,
+      aws_api_gateway_integration.proxy.connection_id,
+      [for k in keys(local.api_routes) : [
+        aws_api_gateway_method.api_route[k].id,
+        aws_api_gateway_integration.api_route[k].uri,
+        aws_api_gateway_method.api_route_proxy[k].id,
+        aws_api_gateway_integration.api_route_proxy[k].uri,
+        aws_api_gateway_integration.api_route[k].connection_id,
+      ]],
     ]))
   }
 

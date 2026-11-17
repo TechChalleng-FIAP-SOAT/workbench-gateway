@@ -26,14 +26,10 @@ variable "api_name" {
   default     = "workbench-gateway"
 }
 
-variable "origin_url" {
-  description = "Base URL of the OS Management backend (the app on Kubernetes), e.g. https://app.example.com."
-  type        = string
-
-  validation {
-    condition     = can(regex("^https?://[^/]+(:[0-9]+)?(/.*)?$", var.origin_url))
-    error_message = "origin_url must be an absolute HTTP or HTTPS URL."
-  }
+variable "service_port" {
+  description = "Porta dos Services dos microsserviços (NLB interno); a mesma nos 4."
+  type        = number
+  default     = 8080
 }
 
 variable "lambda_state_bucket" {
